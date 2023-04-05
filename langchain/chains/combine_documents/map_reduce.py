@@ -74,6 +74,8 @@ class MapReduceDocumentsChain(BaseCombineDocumentsChain, BaseModel):
     If only one variable in the llm_chain, this need not be provided."""
     return_intermediate_steps: bool = False
     """Return the results of the map steps in the output."""
+    parallel_execution: bool = False
+    """Execute the map steps in parallel. Some LLMs (OpenAI) cannot run in parallel."""
 
     @property
     def output_keys(self) -> List[str]:
@@ -136,10 +138,16 @@ class MapReduceDocumentsChain(BaseCombineDocumentsChain, BaseModel):
         Combine by mapping first chain over all documents, then reducing the results.
         This reducing can be done recursively if needed (if there are many documents).
         """
-        results = self.llm_chain.apply(
-            # FYI - this is parallelized and so it is fast.
-            [{**{self.document_variable_name: d.page_content}, **kwargs} for d in docs]
-        )
+        if self.parallel_execution:
+            results = self.llm_chain.apply(
+                # FYI - this is parallelized and so it is fast.
+                [{**{self.document_variable_name: d.page_content}, **kwargs} for d in docs]
+            )
+        else:
+            results = []
+            for d in docs:
+                r = self.llm_chain({**{self.document_variable_name: d.page_content}, **kwargs})
+                results.append(r)
         return self._process_results(results, docs, token_max, **kwargs)
 
     async def acombine_docs(
